@@ -27857,10 +27857,7 @@ async function bootstrap() {
             tunnelPort,
             '--remote-port',
             dbPort,
-        ]);
-        tunnel.stderr.on('data', (data) => {
-            (0, core_1.error)(`[Tunnel Error]: ${data.toString()}`);
-        });
+        ], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 (0, core_1.info)('5 second timeout occurred, proceeding to next step.');
@@ -27874,7 +27871,17 @@ async function bootstrap() {
                     resolve();
                 }
             });
+            tunnel.stderr.on('data', (data) => {
+                const errorMessage = data.toString();
+                (0, core_1.error)(`[Tunnel Error]: ${errorMessage}`);
+                if (errorMessage.includes('UnauthorizedOperation') || errorMessage.includes('Error')) {
+                    tunnel.kill();
+                    clearTimeout(timeout);
+                    reject(new Error(`AWS Tunnel failed: ${errorMessage}`));
+                }
+            });
             tunnel.on('error', (err) => {
+                clearTimeout(timeout);
                 reject(new Error(`Failed to execute AWS CLI: ${err.message}`));
             });
         });

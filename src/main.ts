@@ -27,23 +27,22 @@ async function bootstrap() {
         info(`Starting tunnel: ${dbHost}:${dbPort} -> localhost:${tunnelPort}`);
 
         // 2. 터널 실행
-        const tunnel = spawn('aws', [
-            'ec2-instance-connect',
-            'open-tunnel',
-            '--instance-connect-endpoint-id',
-            awsEndpointId,
-            '--private-ip-address',
-            dbHost,
-            '--local-port',
-            tunnelPort,
-            '--remote-port',
-            dbPort,
-        ]);
-
-        // 3. 로그 모니터링 (문제 발생 시 원인 파악용)
-        tunnel.stderr.on('data', (data) => {
-            logError(`[Tunnel Error]: ${data.toString()}`);
-        });
+        const tunnel = spawn(
+            'aws',
+            [
+                'ec2-instance-connect',
+                'open-tunnel',
+                '--instance-connect-endpoint-id',
+                awsEndpointId,
+                '--private-ip-address',
+                dbHost,
+                '--local-port',
+                tunnelPort,
+                '--remote-port',
+                dbPort,
+            ],
+            { detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
+        ); // 입력을 무시하고 파이프 연결
 
         await new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -51,16 +50,31 @@ async function bootstrap() {
                 resolve();
             }, 5000);
 
+            // 2. 성공 로그 모니터링 (stdout)
             tunnel.stdout.on('data', (data) => {
                 const message = data.toString();
                 if (message.includes('Listening')) {
                     info('Tunnel successfully established.');
-                    clearTimeout(timeout);
+                    clearTimeout(timeout); // 위에서 선언한 timeout에 접근 가능
                     resolve();
                 }
             });
 
+            // 3. 에러 로그 모니터링 (stderr) -> 여기에 추가!
+            tunnel.stderr.on('data', (data) => {
+                const errorMessage = data.toString();
+                logError(`[Tunnel Error]: ${errorMessage}`);
+
+                if (errorMessage.includes('UnauthorizedOperation') || errorMessage.includes('Error')) {
+                    tunnel.kill(); // 터널 프로세스 종료
+                    clearTimeout(timeout); // 타이머 취소
+                    reject(new Error(`AWS Tunnel failed: ${errorMessage}`)); // Promise 실패 처리
+                }
+            });
+
+            // 4. 프로세스 자체의 에러 처리
             tunnel.on('error', (err) => {
+                clearTimeout(timeout);
                 reject(new Error(`Failed to execute AWS CLI: ${err.message}`));
             });
         });
