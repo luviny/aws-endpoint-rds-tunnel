@@ -27859,13 +27859,18 @@ async function bootstrap() {
             dbPort,
         ], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         await new Promise((resolve, reject) => {
+            let tunnelEstablished = false;
             const timeout = setTimeout(() => {
-                tunnel.kill();
-                reject(new Error('Tunnel setup timed out (15s). Please check AWS IAM permissions or network connectivity.'));
+                if (!tunnelEstablished) {
+                    tunnel.kill();
+                    reject(new Error('Tunnel setup timed out (15s). Please check AWS IAM permissions, network connectivity, or missing AWS Credentials.'));
+                }
             }, 15000);
             const onData = (data) => {
                 const message = data.toString();
-                if (message.includes('Listening')) {
+                (0, core_1.info)(`[AWS CLI]: ${message.trim()}`);
+                if (message.includes('Listening') && !tunnelEstablished) {
+                    tunnelEstablished = true;
                     (0, core_1.info)('Tunnel successfully established.');
                     clearTimeout(timeout);
                     resolve();
@@ -27874,20 +27879,32 @@ async function bootstrap() {
             tunnel.stdout.on('data', onData);
             tunnel.stderr.on('data', (data) => {
                 const message = data.toString();
+                if (!message.includes('Listening')) {
+                    (0, core_1.info)(`[AWS CLI stderr]: ${message.trim()}`);
+                }
                 if (message.includes('Listening')) {
                     onData(data);
                     return;
                 }
                 if (message.includes('UnauthorizedOperation') || message.toLowerCase().includes('error')) {
                     (0, core_1.error)(`[AWS CLI Error]: ${message}`);
+                    tunnelEstablished = true;
                     tunnel.kill();
                     clearTimeout(timeout);
                     reject(new Error(`AWS Tunnel failed: ${message}`));
                 }
             });
+            tunnel.on('close', (code) => {
+                if (!tunnelEstablished) {
+                    clearTimeout(timeout);
+                    reject(new Error(`AWS CLI exited unexpectedly with code ${code}. Check logs above for details.`));
+                }
+            });
             tunnel.on('error', (err) => {
-                clearTimeout(timeout);
-                reject(new Error(`Failed to execute AWS CLI: ${err.message}`));
+                if (!tunnelEstablished) {
+                    clearTimeout(timeout);
+                    reject(new Error(`Failed to execute AWS CLI: ${err.message}`));
+                }
             });
         });
         if (databaseUrl) {
