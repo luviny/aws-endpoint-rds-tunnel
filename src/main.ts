@@ -46,33 +46,35 @@ async function bootstrap() {
 
         await new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => {
-                info('5 second timeout occurred, proceeding to next step.');
-                resolve();
+                // 1. 타임아웃 발생 시 터널 프로세스를 종료해야 워크플로우가 멈추지 않습니다.
+                tunnel.kill();
+                logError('5 second timeout occurred. Failed to establish tunnel.');
+
+                // 2. resolve가 아닌 reject를 호출하여 에러 상태로 스텝을 종료합니다.
+                // 터널이 열리지 않았는데 다음 스텝(DB 작업 등)으로 넘어가면 결국 거기서 더 큰 에러가 발생합니다.
+                reject(new Error('Tunnel setup timed out.'));
             }, 5000);
 
-            // 2. 성공 로그 모니터링 (stdout)
             tunnel.stdout.on('data', (data) => {
                 const message = data.toString();
                 if (message.includes('Listening')) {
                     info('Tunnel successfully established.');
-                    clearTimeout(timeout); // 위에서 선언한 timeout에 접근 가능
+                    clearTimeout(timeout);
                     resolve();
                 }
             });
 
-            // 3. 에러 로그 모니터링 (stderr) -> 여기에 추가!
             tunnel.stderr.on('data', (data) => {
                 const errorMessage = data.toString();
-                logError(`[Tunnel Error]: ${errorMessage}`);
-
+                // 실제 권한이나 네트워크 에러가 발생한 경우 즉시 종료
                 if (errorMessage.includes('UnauthorizedOperation') || errorMessage.includes('Error')) {
-                    tunnel.kill(); // 터널 프로세스 종료
-                    clearTimeout(timeout); // 타이머 취소
-                    reject(new Error(`AWS Tunnel failed: ${errorMessage}`)); // Promise 실패 처리
+                    logError(`[Tunnel Error]: ${errorMessage}`);
+                    tunnel.kill();
+                    clearTimeout(timeout);
+                    reject(new Error(`AWS Tunnel failed: ${errorMessage}`));
                 }
             });
 
-            // 4. 프로세스 자체의 에러 처리
             tunnel.on('error', (err) => {
                 clearTimeout(timeout);
                 reject(new Error(`Failed to execute AWS CLI: ${err.message}`));

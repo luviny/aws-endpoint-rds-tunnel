@@ -27860,8 +27860,9 @@ async function bootstrap() {
         ], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-                (0, core_1.info)('5 second timeout occurred, proceeding to next step.');
-                resolve();
+                tunnel.kill();
+                (0, core_1.error)('5 second timeout occurred. Failed to establish tunnel.');
+                reject(new Error('Tunnel setup timed out.'));
             }, 5000);
             tunnel.stdout.on('data', (data) => {
                 const message = data.toString();
@@ -27873,8 +27874,8 @@ async function bootstrap() {
             });
             tunnel.stderr.on('data', (data) => {
                 const errorMessage = data.toString();
-                (0, core_1.error)(`[Tunnel Error]: ${errorMessage}`);
                 if (errorMessage.includes('UnauthorizedOperation') || errorMessage.includes('Error')) {
+                    (0, core_1.error)(`[Tunnel Error]: ${errorMessage}`);
                     tunnel.kill();
                     clearTimeout(timeout);
                     reject(new Error(`AWS Tunnel failed: ${errorMessage}`));
