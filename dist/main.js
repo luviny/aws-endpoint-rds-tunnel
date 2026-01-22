@@ -27883,10 +27883,14 @@ async function bootstrap() {
         const tunnel = (0, node_child_process_1.spawn)('aws', [
             'ec2-instance-connect',
             'open-tunnel',
-            `--instance-connect-endpoint-id ${awsEndpointId}`,
-            `--private-ip-address ${dbHost}`,
-            `--remote-port ${dbPort}`,
-            `--local-port ${tunnelPort}`,
+            '--instance-connect-endpoint-id',
+            awsEndpointId,
+            '--private-ip-address',
+            dbHost,
+            '--remote-port',
+            dbPort,
+            '--local-port',
+            tunnelPort,
             '--debug',
         ]);
         await new Promise((resolve, reject) => {

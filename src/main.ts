@@ -68,10 +68,14 @@ async function bootstrap() {
         const tunnel = spawn('aws', [
             'ec2-instance-connect',
             'open-tunnel',
-            `--instance-connect-endpoint-id ${awsEndpointId}`,
-            `--private-ip-address ${dbHost}`,
-            `--remote-port ${dbPort}`,
-            `--local-port ${tunnelPort}`,
+            '--instance-connect-endpoint-id',
+            awsEndpointId,
+            '--private-ip-address',
+            dbHost,
+            '--remote-port',
+            dbPort,
+            '--local-port',
+            tunnelPort,
             '--debug', // 디버그 플래그 추가
         ]);
 
