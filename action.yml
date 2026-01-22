@@ -1,0 +1,22 @@
+name: 'AWS Endpoint RDS Tunnel'
+description: 'Set up SSH tunnel to AWS RDS through AWS Endpoint for secure database connections'
+inputs:
+  database-url:
+    description: 'postgresql://postgres:1234@localhost:5432/db_name?schema=public'
+    required: false
+  host:
+    description: 'rds host (host is not required if database-url value is used)'
+    required: false
+  port:
+    description: 'rds port (port is not required if database-url value is used)'
+    required: false
+  tunnel-port:
+    description: 'The port to use for the tunnel'
+    default: '11111'
+    required: false
+  aws-endpoint-id:
+    description: 'The AWS endpoint ID to use for the tunnel'
+    required: true
+runs:
+  using: 'node20'
+  main: 'dist/main.js'
