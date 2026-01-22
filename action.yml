@@ -17,6 +17,10 @@ inputs:
   aws-endpoint-id:
     description: 'The AWS endpoint ID to use for the tunnel'
     required: true
+  aws-region:
+    description: 'The AWS region to use for the tunnel'
+    default: 'ap-northeast-2'
+    required: false
 runs:
   using: 'node20'
   main: 'dist/main.js'

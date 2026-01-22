@@ -10,7 +10,8 @@ async function bootstrap() {
         const host = getInput('host');
         const port = getInput('port');
         const tunnelPort = getInput('tunnel-port') || '54321'; // 기본값 설정
-        const awsEndpointId = getInput('aws-endpoint-id', { required: true });
+        const awsEndpointId = getInput('aws-endpoint-id');
+        const awsRegion = getInput('aws-region');
 
         // 1. 정보 추출 로직 개선
         if (databaseUrl) {
@@ -32,6 +33,8 @@ async function bootstrap() {
             [
                 'ec2-instance-connect',
                 'open-tunnel',
+                '--region',
+                awsRegion,
                 '--instance-connect-endpoint-id',
                 awsEndpointId,
                 '--private-ip-address',
@@ -42,7 +45,7 @@ async function bootstrap() {
                 dbPort,
             ],
             { detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
-        ); // 입력을 무시하고 파이프 연결
+        );
 
         await new Promise<void>((resolve, reject) => {
             let tunnelEstablished = false;
@@ -74,10 +77,10 @@ async function bootstrap() {
 
             tunnel.stderr.on('data', (data) => {
                 const message = data.toString();
-                
+
                 // stderr 로그도 출력하여 CI에서 에러 확인 가능하게 함
                 if (!message.includes('Listening')) {
-                     info(`[AWS CLI stderr]: ${message.trim()}`);
+                    info(`[AWS CLI stderr]: ${message.trim()}`);
                 }
 
                 // 메시지에 성공 키워드가 있다면 처리

@@ -27831,7 +27831,8 @@ async function bootstrap() {
         const host = (0, core_1.getInput)('host');
         const port = (0, core_1.getInput)('port');
         const tunnelPort = (0, core_1.getInput)('tunnel-port') || '54321';
-        const awsEndpointId = (0, core_1.getInput)('aws-endpoint-id', { required: true });
+        const awsEndpointId = (0, core_1.getInput)('aws-endpoint-id');
+        const awsRegion = (0, core_1.getInput)('aws-region');
         if (databaseUrl) {
             const parsedUrl = new URL(databaseUrl);
             if (!parsedUrl.hostname)
@@ -27849,6 +27850,8 @@ async function bootstrap() {
         const tunnel = (0, node_child_process_1.spawn)('aws', [
             'ec2-instance-connect',
             'open-tunnel',
+            '--region',
+            awsRegion,
             '--instance-connect-endpoint-id',
             awsEndpointId,
             '--private-ip-address',
