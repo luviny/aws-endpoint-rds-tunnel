@@ -55,7 +55,7 @@ async function bootstrap() {
             const onData = (data: Buffer) => {
                 const message = data.toString();
                 if (message.includes('Listening')) {
-                    info('✅ Tunnel successfully established.');
+                    info('Tunnel successfully established.');
                     clearTimeout(timeout);
                     resolve();
                 }
