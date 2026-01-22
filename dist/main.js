@@ -27823,6 +27823,31 @@ var exports = __webpack_exports__;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core_1 = __nccwpck_require__(9550);
 const node_child_process_1 = __nccwpck_require__(1421);
+async function validateAwsSetup() {
+    (0, core_1.info)('Validating AWS CLI setup and credentials...');
+    return new Promise((resolve, reject) => {
+        const check = (0, node_child_process_1.spawn)('aws', ['sts', 'get-caller-identity'], {
+            stdio: 'pipe',
+            env: { ...process.env, AWS_PAGER: '' },
+        });
+        let stdout = '';
+        let stderr = '';
+        check.stdout.on('data', (d) => (stdout += d.toString()));
+        check.stderr.on('data', (d) => (stderr += d.toString()));
+        check.on('close', (code) => {
+            if (code === 0) {
+                (0, core_1.info)(`AWS Setup Validated: ${stdout.trim()}`);
+                resolve();
+            }
+            else {
+                reject(new Error(`AWS CLI "sts get-caller-identity" failed with code ${code}.\nStdout: ${stdout}\nStderr: ${stderr}\nCheck if AWS credentials and region are correctly set in the environment.`));
+            }
+        });
+        check.on('error', (err) => {
+            reject(new Error(`Failed to spawn AWS CLI (check if 'aws' is installed): ${err.message}`));
+        });
+    });
+}
 async function bootstrap() {
     try {
         let dbHost;
@@ -27831,8 +27856,8 @@ async function bootstrap() {
         const host = (0, core_1.getInput)('host');
         const port = (0, core_1.getInput)('port');
         const tunnelPort = (0, core_1.getInput)('tunnel-port') || '54321';
-        const awsEndpointId = (0, core_1.getInput)('aws-endpoint-id');
-        const awsRegion = (0, core_1.getInput)('aws-region');
+        const awsEndpointId = (0, core_1.getInput)('aws-endpoint-id', { required: true });
+        await validateAwsSetup();
         if (databaseUrl) {
             const parsedUrl = new URL(databaseUrl);
             if (!parsedUrl.hostname)
@@ -27850,8 +27875,6 @@ async function bootstrap() {
         const tunnel = (0, node_child_process_1.spawn)('aws', [
             'ec2-instance-connect',
             'open-tunnel',
-            '--region',
-            awsRegion,
             '--instance-connect-endpoint-id',
             awsEndpointId,
             '--private-ip-address',
@@ -27860,7 +27883,11 @@ async function bootstrap() {
             tunnelPort,
             '--remote-port',
             dbPort,
-        ], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        ], {
+            detached: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: { ...process.env, AWS_PAGER: '' },
+        });
         await new Promise((resolve, reject) => {
             let tunnelEstablished = false;
             const timeout = setTimeout(() => {

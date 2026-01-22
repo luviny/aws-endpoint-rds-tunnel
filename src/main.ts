@@ -1,6 +1,39 @@
 import { getInput, setFailed, info, error as logError, exportVariable } from '@actions/core';
 import { spawn } from 'node:child_process';
 
+async function validateAwsSetup() {
+    info('Validating AWS CLI setup and credentials...');
+    return new Promise<void>((resolve, reject) => {
+        const check = spawn('aws', ['sts', 'get-caller-identity'], {
+            stdio: 'pipe',
+            env: { ...process.env, AWS_PAGER: '' }, // 환경 변수 상속 및 페이저 비활성화
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        check.stdout.on('data', (d) => (stdout += d.toString()));
+        check.stderr.on('data', (d) => (stderr += d.toString()));
+
+        check.on('close', (code) => {
+            if (code === 0) {
+                info(`AWS Setup Validated: ${stdout.trim()}`);
+                resolve();
+            } else {
+                reject(
+                    new Error(
+                        `AWS CLI "sts get-caller-identity" failed with code ${code}.\nStdout: ${stdout}\nStderr: ${stderr}\nCheck if AWS credentials and region are correctly set in the environment.`,
+                    ),
+                );
+            }
+        });
+
+        check.on('error', (err) => {
+            reject(new Error(`Failed to spawn AWS CLI (check if 'aws' is installed): ${err.message}`));
+        });
+    });
+}
+
 async function bootstrap() {
     try {
         let dbHost: string;
@@ -10,8 +43,10 @@ async function bootstrap() {
         const host = getInput('host');
         const port = getInput('port');
         const tunnelPort = getInput('tunnel-port') || '54321'; // 기본값 설정
-        const awsEndpointId = getInput('aws-endpoint-id');
-        const awsRegion = getInput('aws-region');
+        const awsEndpointId = getInput('aws-endpoint-id', { required: true });
+
+        // 0. AWS CLI 실행 환경 검증
+        await validateAwsSetup();
 
         // 1. 정보 추출 로직 개선
         if (databaseUrl) {
@@ -33,8 +68,6 @@ async function bootstrap() {
             [
                 'ec2-instance-connect',
                 'open-tunnel',
-                '--region',
-                awsRegion,
                 '--instance-connect-endpoint-id',
                 awsEndpointId,
                 '--private-ip-address',
@@ -44,7 +77,11 @@ async function bootstrap() {
                 '--remote-port',
                 dbPort,
             ],
-            { detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
+            {
+                detached: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                env: { ...process.env, AWS_PAGER: '' }, // 중요: 환경 변수 전달 및 페이징 방지
+            },
         );
 
         await new Promise<void>((resolve, reject) => {
