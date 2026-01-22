@@ -27861,24 +27861,28 @@ async function bootstrap() {
         await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 tunnel.kill();
-                (0, core_1.error)('5 second timeout occurred. Failed to establish tunnel.');
-                reject(new Error('Tunnel setup timed out.'));
-            }, 5000);
-            tunnel.stdout.on('data', (data) => {
+                reject(new Error('Tunnel setup timed out (15s). Please check AWS IAM permissions or network connectivity.'));
+            }, 15000);
+            const onData = (data) => {
                 const message = data.toString();
                 if (message.includes('Listening')) {
-                    (0, core_1.info)('Tunnel successfully established.');
+                    (0, core_1.info)('✅ Tunnel successfully established.');
                     clearTimeout(timeout);
                     resolve();
                 }
-            });
+            };
+            tunnel.stdout.on('data', onData);
             tunnel.stderr.on('data', (data) => {
-                const errorMessage = data.toString();
-                if (errorMessage.includes('UnauthorizedOperation') || errorMessage.includes('Error')) {
-                    (0, core_1.error)(`[Tunnel Error]: ${errorMessage}`);
+                const message = data.toString();
+                if (message.includes('Listening')) {
+                    onData(data);
+                    return;
+                }
+                if (message.includes('UnauthorizedOperation') || message.toLowerCase().includes('error')) {
+                    (0, core_1.error)(`[AWS CLI Error]: ${message}`);
                     tunnel.kill();
                     clearTimeout(timeout);
-                    reject(new Error(`AWS Tunnel failed: ${errorMessage}`));
+                    reject(new Error(`AWS Tunnel failed: ${message}`));
                 }
             });
             tunnel.on('error', (err) => {

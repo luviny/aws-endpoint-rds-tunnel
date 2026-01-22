@@ -45,36 +45,46 @@ async function bootstrap() {
         ); // 입력을 무시하고 파이프 연결
 
         await new Promise<void>((resolve, reject) => {
+            // 1. 타임아웃을 CI/CD 환경에 맞춰 15초로 넉넉하게 설정
             const timeout = setTimeout(() => {
-                // 1. 타임아웃 발생 시 터널 프로세스를 종료해야 워크플로우가 멈추지 않습니다.
                 tunnel.kill();
-                logError('5 second timeout occurred. Failed to establish tunnel.');
+                reject(new Error('Tunnel setup timed out (15s). Please check AWS IAM permissions or network connectivity.'));
+            }, 15000);
 
-                // 2. resolve가 아닌 reject를 호출하여 에러 상태로 스텝을 종료합니다.
-                // 터널이 열리지 않았는데 다음 스텝(DB 작업 등)으로 넘어가면 결국 거기서 더 큰 에러가 발생합니다.
-                reject(new Error('Tunnel setup timed out.'));
-            }, 5000);
-
-            tunnel.stdout.on('data', (data) => {
+            // 성공 여부를 판별하는 공통 로직
+            const onData = (data: Buffer) => {
                 const message = data.toString();
                 if (message.includes('Listening')) {
-                    info('Tunnel successfully established.');
+                    info('✅ Tunnel successfully established.');
                     clearTimeout(timeout);
                     resolve();
                 }
-            });
+            };
+
+            // 2. stdout과 stderr 모두 감시 (AWS CLI의 Listening 메시지는 보통 stderr로 출력됨)
+            tunnel.stdout.on('data', onData);
 
             tunnel.stderr.on('data', (data) => {
-                const errorMessage = data.toString();
-                // 실제 권한이나 네트워크 에러가 발생한 경우 즉시 종료
-                if (errorMessage.includes('UnauthorizedOperation') || errorMessage.includes('Error')) {
-                    logError(`[Tunnel Error]: ${errorMessage}`);
+                const message = data.toString();
+
+                // 메시지에 성공 키워드가 있다면 처리
+                if (message.includes('Listening')) {
+                    onData(data);
+                    return;
+                }
+
+                // 3. 실제 에러 발생 시 처리
+                // UnauthorizedOperation: 권한 부족 / Error: 일반 에러
+                if (message.includes('UnauthorizedOperation') || message.toLowerCase().includes('error')) {
+                    logError(`[AWS CLI Error]: ${message}`);
+                    // 치명적인 에러인 경우 즉시 종료하고 reject
                     tunnel.kill();
                     clearTimeout(timeout);
-                    reject(new Error(`AWS Tunnel failed: ${errorMessage}`));
+                    reject(new Error(`AWS Tunnel failed: ${message}`));
                 }
             });
 
+            // 프로세스 자체의 실행 에러 (명령어 못 찾음 등)
             tunnel.on('error', (err) => {
                 clearTimeout(timeout);
                 reject(new Error(`Failed to execute AWS CLI: ${err.message}`));
