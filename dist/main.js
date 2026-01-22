@@ -27825,28 +27825,36 @@ const core_1 = __nccwpck_require__(9550);
 const node_child_process_1 = __nccwpck_require__(1421);
 async function validateAwsSetup() {
     (0, core_1.info)('Validating AWS CLI setup and credentials...');
-    return new Promise((resolve, reject) => {
-        const check = (0, node_child_process_1.spawn)('aws', ['sts', 'get-caller-identity'], {
-            stdio: 'pipe',
-            env: { ...process.env, AWS_PAGER: '' },
-        });
-        let stdout = '';
-        let stderr = '';
-        check.stdout.on('data', (d) => (stdout += d.toString()));
-        check.stderr.on('data', (d) => (stderr += d.toString()));
-        check.on('close', (code) => {
-            if (code === 0) {
-                (0, core_1.info)(`AWS Setup Validated: ${stdout.trim()}`);
-                resolve();
-            }
-            else {
-                reject(new Error(`AWS CLI "sts get-caller-identity" failed with code ${code}.\nStdout: ${stdout}\nStderr: ${stderr}\nCheck if AWS credentials and region are correctly set in the environment.`));
-            }
-        });
-        check.on('error', (err) => {
-            reject(new Error(`Failed to spawn AWS CLI (check if 'aws' is installed): ${err.message}`));
-        });
-    });
+    const commands = [
+        { cmd: 'aws', args: ['--version'], name: 'CLI Version' },
+        { cmd: 'aws', args: ['configure', 'get', 'region'], name: 'AWS Region' },
+        { cmd: 'aws', args: ['sts', 'get-caller-identity'], name: 'Identity' },
+    ];
+    for (const { cmd, args, name } of commands) {
+        try {
+            await new Promise((resolve, reject) => {
+                const proc = (0, node_child_process_1.spawn)(cmd, args, { stdio: 'pipe', env: { ...process.env, AWS_PAGER: '' } });
+                let output = '';
+                proc.stdout.on('data', (d) => (output += d.toString()));
+                proc.stderr.on('data', (d) => (output += d.toString()));
+                proc.on('close', (code) => {
+                    if (code === 0 || (name === 'AWS Region' && code !== 0)) {
+                        (0, core_1.info)(`[${name}]: ${output.trim() || '(Not Set)'}`);
+                        resolve();
+                    }
+                    else {
+                        reject(new Error(`Failed to check ${name}: ${output}`));
+                    }
+                });
+            });
+        }
+        catch (error) {
+            if (name === 'AWS Region')
+                (0, core_1.info)(`[${name}]: (Not Set or Error)`);
+            else
+                throw error;
+        }
+    }
 }
 async function bootstrap() {
     try {
@@ -27875,19 +27883,12 @@ async function bootstrap() {
         const tunnel = (0, node_child_process_1.spawn)('aws', [
             'ec2-instance-connect',
             'open-tunnel',
-            '--instance-connect-endpoint-id',
-            awsEndpointId,
-            '--private-ip-address',
-            dbHost,
-            '--local-port',
-            tunnelPort,
-            '--remote-port',
-            dbPort,
-        ], {
-            detached: true,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            env: { ...process.env, AWS_PAGER: '' },
-        });
+            `--instance-connect-endpoint-id ${awsEndpointId}`,
+            `--private-ip-address ${dbHost}`,
+            `--remote-port ${dbPort}`,
+            `--local-port ${tunnelPort}`,
+            '--debug',
+        ]);
         await new Promise((resolve, reject) => {
             let tunnelEstablished = false;
             const timeout = setTimeout(() => {

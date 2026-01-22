@@ -3,35 +3,37 @@ import { spawn } from 'node:child_process';
 
 async function validateAwsSetup() {
     info('Validating AWS CLI setup and credentials...');
-    return new Promise<void>((resolve, reject) => {
-        const check = spawn('aws', ['sts', 'get-caller-identity'], {
-            stdio: 'pipe',
-            env: { ...process.env, AWS_PAGER: '' }, // 환경 변수 상속 및 페이저 비활성화
-        });
 
-        let stdout = '';
-        let stderr = '';
+    // 1. 버전 및 리전 확인 병렬 실행
+    const commands = [
+        { cmd: 'aws', args: ['--version'], name: 'CLI Version' },
+        { cmd: 'aws', args: ['configure', 'get', 'region'], name: 'AWS Region' },
+        { cmd: 'aws', args: ['sts', 'get-caller-identity'], name: 'Identity' },
+    ];
 
-        check.stdout.on('data', (d) => (stdout += d.toString()));
-        check.stderr.on('data', (d) => (stderr += d.toString()));
-
-        check.on('close', (code) => {
-            if (code === 0) {
-                info(`AWS Setup Validated: ${stdout.trim()}`);
-                resolve();
-            } else {
-                reject(
-                    new Error(
-                        `AWS CLI "sts get-caller-identity" failed with code ${code}.\nStdout: ${stdout}\nStderr: ${stderr}\nCheck if AWS credentials and region are correctly set in the environment.`,
-                    ),
-                );
-            }
-        });
-
-        check.on('error', (err) => {
-            reject(new Error(`Failed to spawn AWS CLI (check if 'aws' is installed): ${err.message}`));
-        });
-    });
+    for (const { cmd, args, name } of commands) {
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const proc = spawn(cmd, args, { stdio: 'pipe', env: { ...process.env, AWS_PAGER: '' } });
+                let output = '';
+                proc.stdout.on('data', (d) => (output += d.toString()));
+                proc.stderr.on('data', (d) => (output += d.toString()));
+                proc.on('close', (code) => {
+                    if (code === 0 || (name === 'AWS Region' && code !== 0)) {
+                        // Region은 설정 안되어있으면 에러날 수 있음 (허용)
+                        info(`[${name}]: ${output.trim() || '(Not Set)'}`);
+                        resolve();
+                    } else {
+                        reject(new Error(`Failed to check ${name}: ${output}`));
+                    }
+                });
+            });
+        } catch (error) {
+            // Region 확인 실패는 치명적이지 않으므로 로그만 남김
+            if (name === 'AWS Region') info(`[${name}]: (Not Set or Error)`);
+            else throw error;
+        }
+    }
 }
 
 async function bootstrap() {
@@ -63,26 +65,15 @@ async function bootstrap() {
         info(`Starting tunnel: ${dbHost}:${dbPort} -> localhost:${tunnelPort}`);
 
         // 2. 터널 실행
-        const tunnel = spawn(
-            'aws',
-            [
-                'ec2-instance-connect',
-                'open-tunnel',
-                '--instance-connect-endpoint-id',
-                awsEndpointId,
-                '--private-ip-address',
-                dbHost,
-                '--local-port',
-                tunnelPort,
-                '--remote-port',
-                dbPort,
-            ],
-            {
-                detached: true,
-                stdio: ['ignore', 'pipe', 'pipe'],
-                env: { ...process.env, AWS_PAGER: '' }, // 중요: 환경 변수 전달 및 페이징 방지
-            },
-        );
+        const tunnel = spawn('aws', [
+            'ec2-instance-connect',
+            'open-tunnel',
+            `--instance-connect-endpoint-id ${awsEndpointId}`,
+            `--private-ip-address ${dbHost}`,
+            `--remote-port ${dbPort}`,
+            `--local-port ${tunnelPort}`,
+            '--debug', // 디버그 플래그 추가
+        ]);
 
         await new Promise<void>((resolve, reject) => {
             let tunnelEstablished = false;
